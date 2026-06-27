@@ -64,8 +64,8 @@ async def text_to_speech(data: TTSRequest):
                 audio_data += chunk["data"]
 
         if not audio_data:
-            error_data = json.dumps({"success": False, "detail": "Audio generation failed."}, ensure_ascii=False)
-            return Response(content=error_data, media_type="application/json")
+            error_payload = json.dumps({"success": False, "detail": "Audio generation failed."}, ensure_ascii=False).encode('utf-8')
+            return Response(content=error_payload, media_type="application/json; charset=utf-8")
 
         # အသံဖိုင်ကို Base64 ပြောင်းလဲခြင်း
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
@@ -113,15 +113,18 @@ async def text_to_speech(data: TTSRequest):
 
         srt_content = "\r\n".join(srt_lines)
 
-        # ⭐️ မြန်မာစာလုံးများ မပျက်စီးစေရန် ensure_ascii=False ဖြင့် အပိုင်သိမ်းဆည်းပြီး ပို့ဆောင်ခြင်း
-        response_data = json.dumps({
+        # ⭐️ ဤနေရာတွင် ဒေတာများကို JSON string ပြောင်းပြီး သေချာပေါက် .encode('utf-8') လုပ်၍ byte အဖြစ် ပို့ဆောင်ခြင်းဖြစ်သည်
+        response_dict = {
             "success": True,
             "audioUrl": audio_url,
             "srtData": srt_content
-        }, ensure_ascii=False)
+        }
+        
+        response_bytes = json.dumps(response_dict, ensure_ascii=False).encode('utf-8')
 
-        return Response(content=response_data, media_type="application/json")
+        return Response(content=response_bytes, media_type="application/json; charset=utf-8")
 
     except Exception as e:
-        err_payload = json.dumps({"success": False, "detail": str(e)}, ensure_ascii=False)
-        return Response(content=err_payload, media_type="application/json", status_code=500)
+        err_dict = {"success": False, "detail": str(e)}
+        err_bytes = json.dumps(err_dict, ensure_ascii=False).encode('utf-8')
+        return Response(content=err_bytes, media_type="application/json; charset=utf-8", status_code=500)
