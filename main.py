@@ -1,14 +1,16 @@
 import os
 import re
+import json
 import edge_tts
 import base64
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.responses import Response
 
 app = FastAPI()
 
-# CORS စနစ် သေချာစွာ ဖွင့်လှစ်ခြင်း
+# CORS စနစ် လုံးဝ လွတ်လပ်စွာ ခွင့်ပြုခြင်း
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,10 +44,10 @@ def split_text_to_sentences(text):
 @app.post("/api/tts")
 async def text_to_speech(data: TTSRequest):
     try:
-        # အမျိုးသားသံ (သီဟ) နှင့် အမျိုးသမီးသံ (နဒီ) စနစ်တကျ ခွဲခြားခြင်း
+        # အမျိုးသားသံ (သီဟ) နှင့် အမျိုးသမီးသံ (နဒီ) ခွဲခြားခြင်း
         voice_name = "my-MM-ThihaNeural" if data.voice == "th" else "my-MM-NadiNeural"
         
-        # Edge TTS က ကောင်းမွန်စွာ ဖတ်ရှုနိုင်ရန် rate နှင့် pitch ကို ပုံစံညှိခြင်း
+        # Rate နှင့် Pitch parameter ပုံစံများကို သန့်စင်ခြင်း
         rate_param = data.rate if ('+' in data.rate or '-' in data.rate) else f"+{data.rate}"
         pitch_param = data.pitch if ('+' in data.pitch or '-' in data.pitch) else f"+{data.pitch}"
 
@@ -62,13 +64,14 @@ async def text_to_speech(data: TTSRequest):
                 audio_data += chunk["data"]
 
         if not audio_data:
-            return {"success": False, "detail": "Audio generation failed."}
+            error_data = json.dumps({"success": False, "detail": "Audio generation failed."}, ensure_ascii=False)
+            return Response(content=error_data, media_type="application/json")
 
         # အသံဖိုင်ကို Base64 ပြောင်းလဲခြင်း
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         audio_url = f"data:audio/mp3;base64,{audio_base64}"
 
-        # --- စံနှုန်းကိုက် SRT အချိန်မှတ်များ တည်ဆောက်ခြင်း ---
+        # --- SRT အချိန်မှတ်များ စနစ်တကျ တွက်ချက်တည်ဆောက်ခြင်း ---
         sentences = split_text_to_sentences(data.text)
         if not sentences:
             sentences = [data.text]
@@ -110,12 +113,15 @@ async def text_to_speech(data: TTSRequest):
 
         srt_content = "\r\n".join(srt_lines)
 
-        # FastAPI တွင် ပုံမှန် Dict အဖြစ် ပြန်ပေးခြင်းက JSON အဖြစ် အလိုအလျောက် အကောင်းဆုံး ပြောင်းလဲပေးပါသည်
-        return {
+        # ⭐️ မြန်မာစာလုံးများ မပျက်စီးစေရန် ensure_ascii=False ဖြင့် အပိုင်သိမ်းဆည်းပြီး ပို့ဆောင်ခြင်း
+        response_data = json.dumps({
             "success": True,
             "audioUrl": audio_url,
             "srtData": srt_content
-        }
+        }, ensure_ascii=False)
+
+        return Response(content=response_data, media_type="application/json")
 
     except Exception as e:
-        return {"success": False, "detail": str(e)}
+        err_payload = json.dumps({"success": False, "detail": str(e)}, ensure_ascii=False)
+        return Response(content=err_payload, media_type="application/json", status_code=500)
