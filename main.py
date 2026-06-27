@@ -5,11 +5,10 @@ import base64
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi.responses import JSONResponse
-from fastapi.encoders import jsonable_encoder
 
 app = FastAPI()
 
+# CORS စနစ် သေချာစွာ ဖွင့်လှစ်ခြင်း
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,7 +24,7 @@ class TTSRequest(BaseModel):
     pitch: str
 
 def split_text_to_sentences(text):
-    # မြန်မာစာ ဝါကျအဆုံးသတ်သင်္ကေတများ (။ ၊ သို့မဟုတ် space) ဖြင့် စာကြောင်းခွဲခြင်း
+    # မြန်မာစာ ဝါကျအဆုံးသတ်သင်္ကေတများ (။ ၊ သို့မဟုတ် စာကြောင်းအသစ်) ဖြင့် စာကြောင်းခွဲခြင်း
     raw_sentences = re.split(r'([။၊\n])', text)
     sentences = []
     current = ""
@@ -43,10 +42,10 @@ def split_text_to_sentences(text):
 @app.post("/api/tts")
 async def text_to_speech(data: TTSRequest):
     try:
-        # ဇာတ်ကောင် ရွေးချယ်မှု စနစ်
+        # အမျိုးသားသံ (သီဟ) နှင့် အမျိုးသမီးသံ (နဒီ) စနစ်တကျ ခွဲခြားခြင်း
         voice_name = "my-MM-ThihaNeural" if data.voice == "th" else "my-MM-NadiNeural"
         
-        # Edge TTS ဆီ ပို့မည့် parameter များကို သေချာစွာ စစ်ဆေးခြင်း
+        # Edge TTS က ကောင်းမွန်စွာ ဖတ်ရှုနိုင်ရန် rate နှင့် pitch ကို ပုံစံညှိခြင်း
         rate_param = data.rate if ('+' in data.rate or '-' in data.rate) else f"+{data.rate}"
         pitch_param = data.pitch if ('+' in data.pitch or '-' in data.pitch) else f"+{data.pitch}"
 
@@ -63,13 +62,13 @@ async def text_to_speech(data: TTSRequest):
                 audio_data += chunk["data"]
 
         if not audio_data:
-            raise HTTPException(status_code=400, detail="Audio generation failed.")
+            return {"success": False, "detail": "Audio generation failed."}
 
-        # Audio ကို Base64 String ပြောင်းခြင်း
+        # အသံဖိုင်ကို Base64 ပြောင်းလဲခြင်း
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         audio_url = f"data:audio/mp3;base64,{audio_base64}"
 
-        # --- SRT အချိန်မှတ် တည်ဆောက်ခြင်း ---
+        # --- စံနှုန်းကိုက် SRT အချိန်မှတ်များ တည်ဆောက်ခြင်း ---
         sentences = split_text_to_sentences(data.text)
         if not sentences:
             sentences = [data.text]
@@ -82,7 +81,7 @@ async def text_to_speech(data: TTSRequest):
         except:
             speed_val = 0
             
-        # အမြန်နှုန်းအလိုက် စုစုပေါင်းကြာချိန်ကို ညှိယူခြင်း
+        # အမြန်နှုန်းအလိုက် စုစုပေါင်းကြာချိန်ကို အချိုးကျ ညှိယူခြင်း
         speed_factor = 1 - (speed_val / 150)
         total_duration = max(5, round(total_chars * 0.28 * speed_factor))
         time_per_char = total_duration / total_chars if total_chars > 0 else 0.28
@@ -111,17 +110,12 @@ async def text_to_speech(data: TTSRequest):
 
         srt_content = "\r\n".join(srt_lines)
 
-        # Response Data ကို jsonable_encoder ဖြင့် စနစ်တကျ Encode လုပ်ပြီးမှ ပို့မည် (Error မတက်စေရန်)
-        response_payload = jsonable_encoder({
+        # FastAPI တွင် ပုံမှန် Dict အဖြစ် ပြန်ပေးခြင်းက JSON အဖြစ် အလိုအလျောက် အကောင်းဆုံး ပြောင်းလဲပေးပါသည်
+        return {
             "success": True,
             "audioUrl": audio_url,
             "srtData": srt_content
-        })
-
-        return JSONResponse(content=response_payload)
+        }
 
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content=jsonable_encoder({"success": False, "detail": str(e)})
-        )
+        return {"success": False, "detail": str(e)}
